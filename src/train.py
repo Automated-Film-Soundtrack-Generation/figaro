@@ -38,6 +38,7 @@ LEARNING_RATE = float(os.getenv('LEARNING_RATE', 1e-4))
 LR_SCHEDULE = os.getenv('LR_SCHEDULE', 'const')
 CONTEXT_SIZE = int(os.getenv('CONTEXT_SIZE', 256))
 QUADRANTS = os.getenv('QUADRANTS', 'False') == 'True'
+REG_SINGLE_DIM = os.getenv('REG_SINGLE_DIM', 'False') == 'True'
 
 ACCUMULATE_GRADS = max(1, TARGET_BATCH_SIZE//BATCH_SIZE)
 
@@ -141,7 +142,8 @@ def main():
         max_steps=MAX_STEPS,
         d_model=D_MODEL,
         d_latent=D_LATENT,
-        quadrants=QUADRANTS
+        quadrants=QUADRANTS,
+        reg_single_dim=REG_SINGLE_DIM
       ),
       'figaro-learned': lambda: Seq2SeqModule(
         description_flavor='latent',

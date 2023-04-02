@@ -161,7 +161,8 @@ class VqVaeModule(pl.LightningModule):
                  windowed_attention_pr=0.0,
                  max_lookahead=4,
                  disable_vq=False,
-                 quadrants=False):
+                 quadrants=False,
+                 reg_single_dim=False):
         super().__init__()
 
         self.d_model = d_model
@@ -181,6 +182,7 @@ class VqVaeModule(pl.LightningModule):
         self.max_lookahead = max_lookahead
         self.disable_vq = disable_vq
         self.quadrants = quadrants
+        self.reg_single_dim = reg_single_dim
 
         self.vocab = RemiVocab()
         
@@ -227,18 +229,23 @@ class VqVaeModule(pl.LightningModule):
         self.rec_loss = nn.CrossEntropyLoss(ignore_index=self.pad_token)
 
         if self.quadrants:
+            # ===== IF single dimension regularization =======
             self.valence_mlp = torch.nn.Sequential(
                 torch.nn.Linear(1, 4), # Expand to 4 
                 torch.nn.Linear(4, 1), # Bring it back to 1
                 torch.nn.Sigmoid()
             )
-
             self.arousal_mlp = torch.nn.Sequential(
                 torch.nn.Linear(1, 4),
                 torch.nn.Linear(4, 1),
                 torch.nn.Sigmoid()
             )
 
+            # ===== IF predicting valence and arousal from all dims =========
+            self.va_mlp = torch.nn.Sequential(
+                torch.nn.Linear(self.d_latent, 2),
+                torch.nn.Sigmoid()
+            )
 
         self.save_hyperparameters()
     
@@ -374,12 +381,17 @@ class VqVaeModule(pl.LightningModule):
 
         if self.quadrants:
             latents = out['z']
-            valence_dim = latents[:, 0].unsqueeze(1)
-            arousal_dim = latents[:, 1].unsqueeze(1)
 
-            valence_pred = self.valence_mlp(valence_dim)
-            arousal_pred = self.arousal_mlp(arousal_dim)
-            va_pred = torch.cat([valence_pred, arousal_pred], dim = 1)
+            if self.reg_single_dim:
+                valence_dim = latents[:, 0].unsqueeze(1)
+                arousal_dim = latents[:, 1].unsqueeze(1)
+
+                valence_pred = self.valence_mlp(valence_dim)
+                arousal_pred = self.arousal_mlp(arousal_dim)
+                va_pred = torch.cat([valence_pred, arousal_pred], dim = 1)
+
+            else: # Predict VA based on all dimensions
+                va_pred = self.va_mlp(latents)
 
             quadrants_gt = batch['quadrants']
             va_gt = self.quadrant_to_va(quadrants_gt) 
