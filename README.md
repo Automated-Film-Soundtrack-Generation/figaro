@@ -137,6 +137,12 @@ Others
 | `LOGGING_DIR` | Folder for saving logs | `./logs` |
 | `N_WORKERS` | Number of workers to be used for the dataloader | available CPUs |
 
+Regularization params
+| Variable | Description | Default value |
+|-|-|-|
+| `QUADRANTS` | Set to `True` if finetuning on EMOPIA, getting quadrants and adding discrete reg loss | `False` |
+| `REG_SINGLE_DIM` | Set to `True` if Discrete Reg loss and predicting valence and arousal is done from 1 dimension of latent space each (for Valence and Arousal) | `False` |
+
 ### Generation (`generate.py`)
 | Variable | Description | Default value |
 |-|-|-|
