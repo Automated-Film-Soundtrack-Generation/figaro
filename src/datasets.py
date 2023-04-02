@@ -173,6 +173,10 @@ class SeqCollator:
 
     if 'file' in features[0]:
       batch['files'] = [feature['file'] for feature in features]
+
+    if 'quadrants' in features[0]:
+      quads = [feature['quadrants'] for feature in features]
+      batch['quadrants'] = torch.tensor(quads)
     
     return batch
 
@@ -191,7 +195,8 @@ class MidiDataset(IterableDataset):
                bar_token_mask=None,
                bar_token_idx=2,
                use_cache=True,
-               print_errors=False):
+               print_errors=False,
+               quadrants=False):
     self.files = midi_files
     self.group_bars = group_bars
     self.max_len = max_len
@@ -201,6 +206,7 @@ class MidiDataset(IterableDataset):
     self.max_contexts_per_file = max_contexts_per_file
     self.use_cache = use_cache
     self.print_errors = print_errors
+    self.quadrants = quadrants
 
     self.vocab = RemiVocab()
 
@@ -240,7 +246,7 @@ class MidiDataset(IterableDataset):
     
     for i in range(split_len):
       try:
-        current_file = self.load_file(self.split[i])
+        current_file = self.load_file(self.split[i], self.quadrants)
       except ValueError as err:
         if self.print_errors:
           print(err)
@@ -360,6 +366,9 @@ class MidiDataset(IterableDataset):
           x['latents'] = current_file['latents']
           x['codes'] = current_file['codes']
 
+        if self.quadrants:
+          x['quadrants'] = current_file['quadrants']
+
         yield x
 
   def get_bars(self, events, include_ids=False):
@@ -410,7 +419,7 @@ class MidiDataset(IterableDataset):
     }
     return [token for token in desc if len(token.split('_')) == 0 or valid_keys[token.split('_')[0]]]
 
-  def load_file(self, file):
+  def load_file(self, file, quadrants=False):
     name = os.path.basename(file)
     if self.cache_path and self.use_cache:
       cache_file = os.path.join(self.cache_path, name)
@@ -448,6 +457,9 @@ class MidiDataset(IterableDataset):
       opts = self.description_options
       kwargs = { key: opts[key] for key in ['instruments', 'chords', 'meta'] if key in opts }
       sample['description'] = self.preprocess_description(sample['description'], **self.description_options)
+
+    if quadrants:
+      sample['quadrants'] = int(name[1]) # File names are Q0_<id>, Q1<id> etc. so 1st index is quadrant number
     
     return sample
 
