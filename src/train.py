@@ -37,6 +37,7 @@ MAX_TRAINING_STEPS = int(float(os.getenv('MAX_TRAINING_STEPS', 100_000)))
 LEARNING_RATE = float(os.getenv('LEARNING_RATE', 1e-4))
 LR_SCHEDULE = os.getenv('LR_SCHEDULE', 'const')
 CONTEXT_SIZE = int(os.getenv('CONTEXT_SIZE', 256))
+QUADRANTS = os.getenv('QUADRANTS', 'False') == 'True'
 
 ACCUMULATE_GRADS = max(1, TARGET_BATCH_SIZE//BATCH_SIZE)
 
@@ -140,6 +141,7 @@ def main():
         max_steps=MAX_STEPS,
         d_model=D_MODEL,
         d_latent=D_LATENT,
+        quadrants=QUADRANTS
       ),
       'figaro-learned': lambda: Seq2SeqModule(
         description_flavor='latent',
@@ -185,7 +187,8 @@ def main():
     vae_module=vae_module,
     batch_size=BATCH_SIZE, 
     num_workers=N_WORKERS, 
-    pin_memory=True
+    pin_memory=True,
+    quadrants=QUADRANTS
   )
 
   checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(

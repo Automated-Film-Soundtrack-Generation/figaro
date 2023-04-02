@@ -160,7 +160,8 @@ class VqVaeModule(pl.LightningModule):
                  decoder_ffn_dim=2048,
                  windowed_attention_pr=0.0,
                  max_lookahead=4,
-                 disable_vq=False):
+                 disable_vq=False,
+                 quadrants=False):
         super().__init__()
 
         self.d_model = d_model
@@ -179,6 +180,7 @@ class VqVaeModule(pl.LightningModule):
         self.windowed_attention_pr = windowed_attention_pr
         self.max_lookahead = max_lookahead
         self.disable_vq = disable_vq
+        self.quadrants = quadrants
 
         self.vocab = RemiVocab()
         
@@ -223,6 +225,20 @@ class VqVaeModule(pl.LightningModule):
         self.attention_proj = nn.Linear(self.d_model, self.d_model)
 
         self.rec_loss = nn.CrossEntropyLoss(ignore_index=self.pad_token)
+
+        if self.quadrants:
+            self.valence_mlp = torch.nn.Sequential(
+                torch.nn.Linear(1, 4), # Expand to 4 
+                torch.nn.Linear(4, 1), # Bring it back to 1
+                torch.nn.Sigmoid()
+            )
+
+            self.arousal_mlp = torch.nn.Sequential(
+                torch.nn.Linear(1, 4),
+                torch.nn.Linear(4, 1),
+                torch.nn.Sigmoid()
+            )
+
 
         self.save_hyperparameters()
     
@@ -316,6 +332,32 @@ class VqVaeModule(pl.LightningModule):
         
         return logits
 
+    # quadrant_to_va = {1: (1,1), 2: (0, 1), 3: (0, 0), 4: (1, 0)}
+    def quadrant_to_va(self, quadrants: torch.Tensor) -> torch.Tensor:
+        index_ones = quadrants == 1
+        index_twos = quadrants == 2
+        index_threes = quadrants == 3
+        index_fours = quadrants == 4
+
+        valences = torch.zeros_like(quadrants, dtype=torch.float32)
+        arousals = torch.zeros_like(quadrants, dtype=torch.float32)
+
+        # Set valences
+        valences[index_ones] = 1
+        valences[index_twos] = 0
+        valences[index_threes] = 0
+        valences[index_fours] = 1
+
+        # Set Arousals
+        arousals[index_ones] = 1
+        arousals[index_twos] = 1
+        arousals[index_threes] = 0
+        arousals[index_fours] = 0
+
+        va = torch.stack([valences, arousals], dim=1)
+
+        return va
+    
     def get_loss(self, batch, windowed_attention_pr=None):
         if windowed_attention_pr is None:
             windowed_attention_pr = self.windowed_attention_pr
@@ -330,6 +372,26 @@ class VqVaeModule(pl.LightningModule):
             use_windowed_attention=use_windowed_attention,
         )
 
+        if self.quadrants:
+            latents = out['z']
+            valence_dim = latents[:, 0].unsqueeze(1)
+            arousal_dim = latents[:, 1].unsqueeze(1)
+
+            valence_pred = self.valence_mlp(valence_dim)
+            arousal_pred = self.arousal_mlp(arousal_dim)
+            va_pred = torch.cat([valence_pred, arousal_pred], dim = 1)
+
+            quadrants_gt = batch['quadrants']
+            va_gt = self.quadrant_to_va(quadrants_gt) 
+
+            # print('\nQuadrants GT', quadrants_gt)
+            # print('Va pred', va_pred)
+            # print('Va gt', va_gt)
+            
+            disc_reg_loss = F.binary_cross_entropy(va_pred, va_gt) # Discrete regularization loss
+
+            # print('Loss', disc_reg_loss)
+
         logits = out['logits']
         # Reshape logits to: (batch_size * seq_len, vocab_size)
         logits = logits.view(-1, logits.size(-1))
@@ -340,6 +402,10 @@ class VqVaeModule(pl.LightningModule):
 
         if self.disable_vq:
             loss = rec_loss
+        elif self.quadrants:
+            diff = out['diff']
+            out['disc_reg_loss'] = disc_reg_loss
+            loss = rec_loss + self.beta*diff + disc_reg_loss
         else:
             diff = out['diff']
             loss = rec_loss + self.beta*diff
@@ -352,7 +418,7 @@ class VqVaeModule(pl.LightningModule):
     
     def training_step(self, batch, batch_idx, optimizer_idx=0):
         metrics = self.get_loss(batch)
-        log_metrics = { key: metrics[key].detach() for key in ['loss', 'rec_loss', 'diff', 'avg_usage', 'usage', 'entropy'] if key in metrics }
+        log_metrics = { key: metrics[key].detach() for key in ['loss', 'rec_loss', 'diff', 'avg_usage', 'usage', 'entropy', 'disc_reg_loss'] if key in metrics }
         self.log('train', log_metrics, on_step=True, on_epoch=True, prog_bar=False, logger=True, sync_dist=True)
         return metrics['loss']
     
