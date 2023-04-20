@@ -7,6 +7,7 @@ import glob
 
 import pytorch_lightning as pl
 
+from pytorch_lightning.callbacks import StochasticWeightAveraging, BatchSizeFinder, LearningRateFinder
 from models.seq2seq import Seq2SeqModule
 from models.vae import VqVaeModule
 
@@ -205,25 +206,30 @@ def main():
   lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='step')
 
   trainer = pl.Trainer(
-    gpus=0 if device.type == 'cpu' else torch.cuda.device_count(),
-    accelerator='dp',
+    #gpus=0 if device.type == 'cpu' else torch.cuda.device_count(),
+    accelerator='gpu',
     profiler='simple',
-    callbacks=[checkpoint_callback, lr_monitor],
+    enable_checkpointing = True,
+    callbacks=[ 
+    lr_monitor,
+    StochasticWeightAveraging(0.05),
+    BatchSizeFinder(),
+    LearningRateFinder()],
     max_epochs=EPOCHS,
     max_steps=MAX_TRAINING_STEPS,
     log_every_n_steps=max(100, min(25*ACCUMULATE_GRADS, 200)),
     val_check_interval=max(500, min(300*ACCUMULATE_GRADS, 1000)),
     limit_val_batches=64,
-    auto_scale_batch_size=False,
-    auto_lr_find=False,
+    #auto_scale_batch_size=False,
+    #auto_lr_find=False,
     accumulate_grad_batches=ACCUMULATE_GRADS,
-    stochastic_weight_avg=True,
+    #stochastic_weight_avg=True,
     gradient_clip_val=1.0, 
-    terminate_on_nan=True,
-    resume_from_checkpoint=CHECKPOINT
+    detect_anomaly=True,
+    #resume_from_checkpoint=CHECKPOINT
   )
 
-  trainer.fit(model, datamodule)
+  trainer.fit(model, datamodule, ckpt_path=VAE_CHECKPOINT)
 
 if __name__ == '__main__':
   main()
