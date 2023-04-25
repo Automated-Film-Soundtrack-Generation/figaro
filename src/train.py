@@ -6,6 +6,7 @@ import os
 import glob
 
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from models.seq2seq import Seq2SeqModule
 from models.vae import VqVaeModule
@@ -202,6 +203,8 @@ def main():
     every_n_train_steps=1000,
   )
 
+  logger = TensorBoardLogger(os.path.join(LOGGING_DIR, MODEL))
+
   lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='step')
 
   trainer = pl.Trainer(
@@ -220,7 +223,8 @@ def main():
     stochastic_weight_avg=True,
     gradient_clip_val=1.0, 
     terminate_on_nan=True,
-    resume_from_checkpoint=CHECKPOINT
+    resume_from_checkpoint=CHECKPOINT,
+    logger=logger
   )
 
   trainer.fit(model, datamodule)
